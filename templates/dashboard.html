@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — SprintFlow{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Dashboard</h1>
+        <p class="page-subtitle">Overview of all projects and sprint health</p>
+    </div>
+    <a href="{{ url_for('new_project') }}" class="btn btn-primary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New Project
+    </a>
+</div>
+
+<!-- Metrics -->
+<div class="metrics-grid">
+    <div class="metric-card">
+        <div class="metric-label">Active Sprints</div>
+        <div class="metric-value" style="color: var(--accent);">{{ active_sprints|length }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Avg Velocity</div>
+        <div class="metric-value" style="color: var(--success);">{{ velocity_data.average }}</div>
+        <div class="metric-trend {{ velocity_data.trend }}">
+            {% if velocity_data.trend == 'up' %}↑ Trending up{% else %}→ Stable{% endif %}
+        </div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Total Stories</div>
+        <div class="metric-value">{{ status_dist.values()|sum }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Completed</div>
+        <div class="metric-value" style="color: var(--success);">{{ status_dist.get('done', 0) }}</div>
+    </div>
+</div>
+
+<div class="grid-3 mb-24">
+    <!-- Velocity Chart -->
+    <div class="card">
+        <div class="card-title">Velocity Trend</div>
+        <div class="chart-container">
+            <canvas id="velocityChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Story Status Distribution -->
+    <div class="card">
+        <div class="card-title">Story Distribution</div>
+        <div class="chart-container">
+            <canvas id="statusChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="grid-3 mb-24">
+    <!-- Active Sprints -->
+    <div class="card">
+        <div class="card-title">Active Sprints</div>
+        {% for sprint in active_sprints %}
+        <div style="padding: 16px 0; border-bottom: 1px solid var(--border);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <a href="{{ url_for('sprint_detail', sprint_id=sprint.id) }}" style="color: var(--text-primary); text-decoration: none; font-weight: 500;">{{ sprint.name }}</a>
+                <span class="badge badge-status-active">Active</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">
+                <span>{{ sprint.completed_points }}/{{ sprint.total_points }} pts</span>
+                <span>{{ sprint.days_remaining }} days left</span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: {{ sprint.progress_percentage }}%; background: var(--accent);"></div>
+            </div>
+        </div>
+        {% else %}
+        <p style="color: var(--text-muted); padding: 20px 0; text-align: center;">No active sprints</p>
+        {% endfor %}
+    </div>
+
+    <!-- Team Workload -->
+    <div class="card">
+        <div class="card-title">Team Workload</div>
+        {% for item in workload %}
+        <div class="workload-bar">
+            <div class="avatar" style="background: {{ item.user.avatar_color }}; width: 24px; height: 24px; font-size: 11px;">
+                {{ item.user.username[0]|upper }}
+            </div>
+            <span style="font-size: 13px; min-width: 60px;">{{ item.user.username }}</span>
+            <div class="workload-fill-container">
+                <div class="workload-fill" style="width: {{ [item.points * 3, 100]|min }}%;"></div>
+            </div>
+            <span class="points-badge">{{ item.points }} pts</span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Recent Activity -->
+<div class="card">
+    <div class="card-title">Recent Activity</div>
+    {% for activity in recent_activity %}
+    <div class="activity-item">
+        <div class="activity-dot"></div>
+        <div>
+            <div class="activity-text">
+                {% if activity.user %}<strong>{{ activity.user.username }}</strong>{% endif %}
+                {{ activity.action }}
+            </div>
+            <div class="activity-time">{{ activity.timestamp|timeago }}</div>
+        </div>
+    </div>
+    {% else %}
+    <p style="color: var(--text-muted); text-align: center; padding: 20px;">No activity yet</p>
+    {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Velocity Chart
+const velCtx = document.getElementById('velocityChart').getContext('2d');
+new Chart(velCtx, {
+    type: 'bar',
+    data: {
+        labels: {{ velocity_data.labels|tojson }},
+        datasets: [{
+            label: 'Velocity',
+            data: {{ velocity_data['values']|tojson }},
+            backgroundColor: 'rgba(99, 102, 241, 0.6)',
+            borderColor: '#6366f1',
+            borderWidth: 1,
+            borderRadius: 6,
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+            y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#5a5a6e' } },
+            x: { grid: { display: false }, ticks: { color: '#5a5a6e' } }
+        }
+    }
+});
+
+// Status Chart
+const statusCtx = document.getElementById('statusChart').getContext('2d');
+const statusData = {{ status_dist|tojson }};
+const statusColors = {
+    backlog: '#5a5a6e', todo: '#6366f1', in_progress: '#f59e0b', review: '#ec4899', done: '#10b981'
+};
+new Chart(statusCtx, {
+    type: 'doughnut',
+    data: {
+        labels: Object.keys(statusData).map(s => s.replace('_', ' ')),
+        datasets: [{
+            data: Object.values(statusData),
+            backgroundColor: Object.keys(statusData).map(s => statusColors[s] || '#5a5a6e'),
+            borderWidth: 0,
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '65%',
+        plugins: {
+            legend: {
+                position: 'bottom',
+                labels: { color: '#8b8b9e', padding: 16, usePointStyle: true, pointStyle: 'circle' }
+            }
+        }
+    }
+});
+</script>
+{% endblock %}

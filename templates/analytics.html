@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}Analytics — SprintFlow{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Analytics</h1>
+        <p class="page-subtitle">Sprint velocity, lead time, and team performance insights</p>
+    </div>
+</div>
+
+<!-- Summary Metrics -->
+<div class="metrics-grid">
+    <div class="metric-card">
+        <div class="metric-label">Sprints Completed</div>
+        <div class="metric-value">{{ velocity_trend|length }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Avg Velocity</div>
+        <div class="metric-value" style="color: var(--accent);">
+            {% if velocity_trend %}{{ (velocity_trend|map(attribute='velocity')|sum / velocity_trend|length)|round(1) }}{% else %}0{% endif %}
+        </div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Avg Lead Time</div>
+        <div class="metric-value" style="color: var(--warning);">{{ lead_time_stats.get('average', 0) }}d</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">P85 Lead Time</div>
+        <div class="metric-value">{{ lead_time_stats.get('p85', 0) }}d</div>
+    </div>
+</div>
+
+<div class="grid-2 mb-24">
+    <!-- Velocity Trend -->
+    <div class="card">
+        <div class="card-title">Velocity vs Capacity</div>
+        <div class="chart-container">
+            <canvas id="velocityTrendChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Lead Time Distribution -->
+    <div class="card">
+        <div class="card-title">Lead Time Distribution</div>
+        <div class="chart-container">
+            <canvas id="leadTimeChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="grid-2 mb-24">
+    <!-- Epic Breakdown -->
+    <div class="card">
+        <div class="card-title">Points by Epic</div>
+        <div class="chart-container">
+            <canvas id="epicChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Team Contribution -->
+    <div class="card">
+        <div class="card-title">Team Contribution (Completed Points)</div>
+        <div class="chart-container">
+            <canvas id="teamChart"></canvas>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Velocity Trend
+const velTrend = {{ velocity_trend|tojson }};
+new Chart(document.getElementById('velocityTrendChart'), {
+    type: 'bar',
+    data: {
+        labels: velTrend.map(v => v.name),
+        datasets: [
+            {
+                label: 'Velocity',
+                data: velTrend.map(v => v.velocity),
+                backgroundColor: 'rgba(99, 102, 241, 0.7)',
+                borderRadius: 6,
+            },
+            {
+                label: 'Capacity',
+                data: velTrend.map(v => v.capacity),
+                backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                borderColor: 'rgba(255, 255, 255, 0.15)',
+                borderWidth: 1,
+                borderRadius: 6,
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#8b8b9e' } } },
+        scales: {
+            y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#5a5a6e' } },
+            x: { grid: { display: false }, ticks: { color: '#5a5a6e' } }
+        }
+    }
+});
+
+// Lead Time Distribution
+const ltDist = {{ lead_time_stats.get('distribution', [])|tojson }};
+if (ltDist.length > 0) {
+    const maxLT = Math.max(...ltDist);
+    const buckets = {};
+    ltDist.forEach(lt => {
+        const b = Math.floor(lt);
+        buckets[b] = (buckets[b] || 0) + 1;
+    });
+    const labels = Object.keys(buckets).sort((a, b) => a - b);
+    new Chart(document.getElementById('leadTimeChart'), {
+        type: 'bar',
+        data: {
+            labels: labels.map(l => l + 'd'),
+            datasets: [{
+                label: 'Stories',
+                data: labels.map(l => buckets[l]),
+                backgroundColor: 'rgba(16, 185, 129, 0.6)',
+                borderRadius: 4,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#5a5a6e', stepSize: 1 } },
+                x: { grid: { display: false }, ticks: { color: '#5a5a6e' } }
+            }
+        }
+    });
+}
+
+// Epic Breakdown
+const epicData = {{ epic_data|tojson }};
+const epicLabels = Object.keys(epicData);
+new Chart(document.getElementById('epicChart'), {
+    type: 'bar',
+    data: {
+        labels: epicLabels,
+        datasets: [
+            {
+                label: 'Done',
+                data: epicLabels.map(e => epicData[e].done),
+                backgroundColor: 'rgba(16, 185, 129, 0.7)',
+                borderRadius: 4,
+            },
+            {
+                label: 'Remaining',
+                data: epicLabels.map(e => epicData[e].total - epicData[e].done),
+                backgroundColor: 'rgba(99, 102, 241, 0.4)',
+                borderRadius: 4,
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#8b8b9e' } } },
+        scales: {
+            y: { stacked: true, beginAtZero: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#5a5a6e' } },
+            x: { stacked: true, grid: { display: false }, ticks: { color: '#5a5a6e' } }
+        }
+    }
+});
+
+// Team Contribution
+const teamData = {{ team_contribution|tojson }};
+const teamLabels = Object.keys(teamData);
+const teamColors = ['#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#ef4444', '#8b5cf6'];
+new Chart(document.getElementById('teamChart'), {
+    type: 'doughnut',
+    data: {
+        labels: teamLabels,
+        datasets: [{
+            data: teamLabels.map(t => teamData[t]),
+            backgroundColor: teamLabels.map((_, i) => teamColors[i % teamColors.length]),
+            borderWidth: 0,
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '60%',
+        plugins: {
+            legend: { position: 'bottom', labels: { color: '#8b8b9e', padding: 16, usePointStyle: true } }
+        }
+    }
+});
+</script>
+{% endblock %}

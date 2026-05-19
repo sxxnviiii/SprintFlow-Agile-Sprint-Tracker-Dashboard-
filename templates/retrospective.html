@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Retrospective — {{ sprint.name }} — SprintFlow{% endblock %}
+{% block content %}
+<div style="max-width: 700px;">
+    <h1 class="page-title" style="margin-bottom: 4px;">Sprint Retrospective</h1>
+    <p class="page-subtitle" style="margin-bottom: 28px;">{{ sprint.name }} · {{ sprint.start_date.strftime('%b %d') }} — {{ sprint.end_date.strftime('%b %d, %Y') }}</p>
+
+    <form method="POST">
+        <div class="card mb-24" style="border-left: 3px solid var(--success);">
+            <div class="card-title" style="color: var(--success);">✓ What went well</div>
+            <textarea name="went_well" class="form-textarea" style="min-height: 120px;" placeholder="- Team collaboration was great&#10;- Delivered all critical stories&#10;- Good code review practices">{{ retro.went_well if retro else '' }}</textarea>
+        </div>
+
+        <div class="card mb-24" style="border-left: 3px solid var(--warning);">
+            <div class="card-title" style="color: var(--warning);">↗ What to improve</div>
+            <textarea name="to_improve" class="form-textarea" style="min-height: 120px;" placeholder="- Estimation accuracy needs work&#10;- Too many context switches&#10;- Late requirement changes">{{ retro.to_improve if retro else '' }}</textarea>
+        </div>
+
+        <div class="card mb-24" style="border-left: 3px solid var(--accent);">
+            <div class="card-title" style="color: var(--accent);">⚡ Action items</div>
+            <textarea name="action_items" class="form-textarea" style="min-height: 120px;" placeholder="- [ ] Introduce planning poker for estimates&#10;- [ ] Limit WIP to 2 per developer&#10;- [ ] Add definition of ready checklist">{{ retro.action_items if retro else '' }}</textarea>
+        </div>
+
+        <div class="card mb-24">
+            <div class="card-title">Team Morale</div>
+            <div style="display: flex; gap: 16px; align-items: center;">
+                {% for i in range(1, 6) %}
+                <label style="cursor: pointer; text-align: center;">
+                    <input type="radio" name="team_morale" value="{{ i }}" {% if retro and retro.team_morale == i %}checked{% elif not retro and i == 3 %}checked{% endif %} style="display: none;">
+                    <div style="font-size: 36px; opacity: 0.4; transition: opacity 0.15s;" class="morale-icon" data-val="{{ i }}">
+                        {{ ['😞', '😐', '🙂', '😊', '🚀'][i-1] }}
+                    </div>
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">{{ ['Poor', 'Low', 'OK', 'Good', 'Great'][i-1] }}</div>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 12px;">
+            <button type="submit" class="btn btn-primary">Save Retrospective</button>
+            <a href="{{ url_for('sprint_detail', sprint_id=sprint.id) }}" class="btn btn-secondary">Back to Sprint</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll('input[name="team_morale"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+        document.querySelectorAll('.morale-icon').forEach(icon => icon.style.opacity = '0.4');
+        const selected = document.querySelector(`.morale-icon[data-val="${radio.value}"]`);
+        if (selected) selected.style.opacity = '1';
+    });
+});
+// Init
+const checked = document.querySelector('input[name="team_morale"]:checked');
+if (checked) document.querySelector(`.morale-icon[data-val="${checked.value}"]`).style.opacity = '1';
+</script>
+{% endblock %}

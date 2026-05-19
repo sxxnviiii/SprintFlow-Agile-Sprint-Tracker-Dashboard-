@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} — SprintFlow{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">{{ project.name }}</h1>
+        <p class="page-subtitle">{{ project.description or 'No description' }}</p>
+    </div>
+    <div style="display: flex; gap: 10px;">
+        <a href="{{ url_for('new_story', project_id=project.id) }}" class="btn btn-primary btn-sm">+ Story</a>
+        <a href="{{ url_for('new_sprint', project_id=project.id) }}" class="btn btn-secondary btn-sm">+ Sprint</a>
+    </div>
+</div>
+
+{% if active_sprint %}
+<!-- Sprint Info Bar -->
+<div class="card mb-24" style="display: flex; justify-content: space-between; align-items: center; padding: 16px 24px;">
+    <div>
+        <strong>{{ active_sprint.name }}</strong>
+        <span style="color: var(--text-muted); margin-left: 8px;">{{ active_sprint.goal }}</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 20px;">
+        <span style="font-size: 13px; color: var(--text-secondary);">
+            {{ active_sprint.completed_points }}/{{ active_sprint.total_points }} pts
+        </span>
+        <div class="progress-bar" style="width: 120px;">
+            <div class="progress-fill" style="width: {{ active_sprint.progress_percentage }}%; background: var(--accent);"></div>
+        </div>
+        <span style="font-size: 13px; color: var(--text-muted);">{{ active_sprint.days_remaining }}d left</span>
+        <a href="{{ url_for('sprint_detail', sprint_id=active_sprint.id) }}" class="btn btn-secondary btn-sm">View Sprint</a>
+    </div>
+</div>
+
+<!-- Kanban Board -->
+<div class="kanban-board">
+    {% for status, label in [('todo', 'To Do'), ('in_progress', 'In Progress'), ('review', 'Review'), ('done', 'Done')] %}
+    <div class="kanban-column" id="col-{{ status }}" ondrop="dropCard(event, '{{ status }}')" ondragover="event.preventDefault()">
+        <div class="kanban-header">
+            <span class="kanban-title" style="color: {{ {'todo': 'var(--accent)', 'in_progress': 'var(--warning)', 'review': 'var(--critical)', 'done': 'var(--success)'}[status] }};">{{ label }}</span>
+            <span class="kanban-count">{{ columns.get(status, [])|length }}</span>
+        </div>
+        {% for story in columns.get(status, []) %}
+        <div class="kanban-card" draggable="true" ondragstart="dragCard(event, {{ story.id }})" id="card-{{ story.id }}">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+                <span class="badge badge-priority-{{ story.priority }}" style="font-size: 10px;">{{ story.priority }}</span>
+                {% if story.epic %}<span style="font-size: 11px; color: var(--text-muted);">{{ story.epic }}</span>{% endif %}
+            </div>
+            <div class="kanban-card-title">{{ story.title }}</div>
+            <div class="kanban-card-meta">
+                {% if story.story_points %}<span class="points-badge">{{ story.story_points }} SP</span>{% endif %}
+                {% if story.assignee %}
+                <div class="avatar" style="background: {{ story.assignee.avatar_color }}; width: 22px; height: 22px; font-size: 10px;">
+                    {{ story.assignee.username[0]|upper }}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Backlog -->
+<div class="card" style="margin-top: 28px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div class="card-title" style="margin-bottom: 0;">Product Backlog ({{ backlog|length }})</div>
+        {% if active_sprint %}
+        <span style="font-size: 12px; color: var(--text-muted);">Drag stories to sprint or use actions</span>
+        {% endif %}
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Story</th>
+                <th>Priority</th>
+                <th>Points</th>
+                <th>Epic</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for story in backlog %}
+            <tr>
+                <td>
+                    <div style="font-weight: 500;">{{ story.title }}</div>
+                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">{{ story.description[:80] }}{% if story.description|length > 80 %}...{% endif %}</div>
+                </td>
+                <td><span class="badge badge-priority-{{ story.priority }}">{{ story.priority }}</span></td>
+                <td><span class="points-badge">{{ story.story_points }}</span></td>
+                <td style="color: var(--text-secondary);">{{ story.epic or '—' }}</td>
+                <td>
+                    {% if active_sprint %}
+                    <form method="POST" action="{{ url_for('move_to_sprint', story_id=story.id) }}" style="display: inline;">
+                        <input type="hidden" name="sprint_id" value="{{ active_sprint.id }}">
+                        <button type="submit" class="btn btn-secondary btn-sm">→ Sprint</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 40px;">Backlog is empty</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function dragCard(e, storyId) {
+    e.dataTransfer.setData('text/plain', storyId);
+}
+
+function dropCard(e, newStatus) {
+    e.preventDefault();
+    const storyId = e.dataTransfer.getData('text/plain');
+    fetch(`/story/${storyId}/update_status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+    }).then(r => r.json()).then(() => location.reload());
+}
+</script>
+{% endblock %}

@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}{{ sprint.name }} — SprintFlow{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">{{ sprint.name }}</h1>
+        <p class="page-subtitle">{{ sprint.goal or 'No sprint goal set' }} · {{ sprint.start_date.strftime('%b %d') }} — {{ sprint.end_date.strftime('%b %d, %Y') }}</p>
+    </div>
+    <div style="display: flex; gap: 10px;">
+        {% if sprint.status == 'planning' %}
+        <form method="POST" action="{{ url_for('start_sprint', sprint_id=sprint.id) }}">
+            <button type="submit" class="btn btn-success">▶ Start Sprint</button>
+        </form>
+        {% elif sprint.status == 'active' %}
+        <a href="{{ url_for('retrospective', sprint_id=sprint.id) }}" class="btn btn-secondary">Retrospective</a>
+        <form method="POST" action="{{ url_for('complete_sprint', sprint_id=sprint.id) }}">
+            <button type="submit" class="btn btn-danger" onclick="return confirm('Complete this sprint? Incomplete stories move to backlog.')">✓ Complete Sprint</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Sprint Metrics -->
+<div class="metrics-grid">
+    <div class="metric-card">
+        <div class="metric-label">Total Points</div>
+        <div class="metric-value">{{ sprint.total_points }}</div>
+        {% if scope_creep > 0 %}
+        <div class="metric-trend down">+{{ scope_creep }} scope creep</div>
+        {% endif %}
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Completed</div>
+        <div class="metric-value" style="color: var(--success);">{{ sprint.completed_points }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Progress</div>
+        <div class="metric-value" style="color: var(--accent);">{{ sprint.progress_percentage }}%</div>
+        <div class="progress-bar" style="margin-top: 8px;">
+            <div class="progress-fill" style="width: {{ sprint.progress_percentage }}%; background: var(--accent);"></div>
+        </div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Avg Cycle Time</div>
+        <div class="metric-value">{{ avg_cycle_time }}d</div>
+    </div>
+</div>
+
+<!-- Burndown Chart -->
+<div class="card mb-24">
+    <div class="card-title">Sprint Burndown</div>
+    <div class="chart-container" style="height: 350px;">
+        <canvas id="burndownChart"></canvas>
+    </div>
+</div>
+
+<!-- Stories Table -->
+<div class="card">
+    <div class="card-title">Sprint Backlog ({{ stories|length }} stories)</div>
+    <table>
+        <thead>
+            <tr>
+                <th>Story</th>
+                <th>Status</th>
+                <th>Priority</th>
+                <th>Points</th>
+                <th>Assigned</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for story in stories %}
+            <tr>
+                <td>
+                    <div style="font-weight: 500;">{{ story.title }}</div>
+                    {% if story.epic %}<span style="font-size: 11px; color: var(--text-muted);">{{ story.epic }}</span>{% endif %}
+                </td>
+                <td><span class="badge badge-status-{{ story.status }}">{{ story.status|replace('_', ' ') }}</span></td>
+                <td><span class="badge badge-priority-{{ story.priority }}">{{ story.priority }}</span></td>
+                <td><span class="points-badge">{{ story.story_points }}</span></td>
+                <td>
+                    {% if story.assignee %}
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <div class="avatar" style="background: {{ story.assignee.avatar_color }}; width: 22px; height: 22px; font-size: 10px;">{{ story.assignee.username[0]|upper }}</div>
+                        <span style="font-size: 13px;">{{ story.assignee.username }}</span>
+                    </div>
+                    {% else %}—{% endif %}
+                </td>
+                <td>
+                    <form method="POST" action="{{ url_for('update_story_status', story_id=story.id) }}" style="display: inline;">
+                        <select name="status" onchange="this.form.submit()" class="form-select" style="width: auto; padding: 4px 8px; font-size: 12px;">
+                            {% for s in ['backlog', 'todo', 'in_progress', 'review', 'done'] %}
+                            <option value="{{ s }}" {% if story.status == s %}selected{% endif %}>{{ s|replace('_', ' ') }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const burndownData = {{ burndown|tojson }};
+
+const ctx = document.getElementById('burndownChart').getContext('2d');
+new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: burndownData.ideal.map(d => {
+            const date = new Date(d.date);
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }),
+        datasets: [
+            {
+                label: 'Ideal Burndown',
+                data: burndownData.ideal.map(d => d.points),
+                borderColor: 'rgba(99, 102, 241, 0.4)',
+                borderDash: [6, 4],
+                borderWidth: 2,
+                fill: false,
+                pointRadius: 0,
+                tension: 0,
+            },
+            {
+                label: 'Actual Remaining',
+                data: burndownData.actual.map(d => d.points),
+                borderColor: '#10b981',
+                borderWidth: 2.5,
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                fill: true,
+                pointRadius: 4,
+                pointBackgroundColor: '#10b981',
+                tension: 0.3,
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                labels: { color: '#8b8b9e', usePointStyle: true }
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                grid: { color: 'rgba(255,255,255,0.04)' },
+                ticks: { color: '#5a5a6e' },
+                title: { display: true, text: 'Story Points', color: '#5a5a6e' }
+            },
+            x: {
+                grid: { display: false },
+                ticks: { color: '#5a5a6e' }
+            }
+        }
+    }
+});
+</script>
+{% endblock %}
